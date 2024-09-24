@@ -32,35 +32,29 @@
 #' buffers uncertainties. \emph{Nat Commun} \strong{7}, 11877. \doi{10.1038/ncomms11877}
 #'
 #' @references Husmann, K., von Groß, V., Bödeker, K., Fuchs, J. M., Paul, C., & Knoke, T. (2022). optimLanduse: A package for multiobjective land-cover composition optimization under uncertainty. Methods in Ecology and Evolution, 00, 1– 10. https://doi.org/10.1111/2041-210X.14000
-
-
 #' @import lpSolveAPI
-
 #' @export
 solveScenario <- function (x, digitsPrecision = 4,
                            lowerBound = 0, upperBound = 1,
                            paretoY = NA, paretoX = NA,
                            paretoMaxDistance = NA) {
 
-
-  if(is.na(paretoY) & any(is.na(paretoX))) {
+  if(any(is.na(paretoY)) & any(is.na(paretoX))) {
     coefObjective <- x$coefObjective # Summen aus aller Scenarien der LandUse-Optionen (s. helper Funktion)
-    piConstraintCoefficients <- x$coefConstraint # relativie Werte (m. Distanz als Divisor)
+    piConstraintCoefficients <- apply(x$coefConstraint[,-1], c(1,2), as.numeric)# relativie Werte (m. Distanz als Divisor)
     #tbd. Die Variablen sollte ich noch umbenennen. Von piConstraintCoefficients zu coefConstraint
   }
 
-  if(!is.na(paretoY) & any(is.na(paretoX)) | is.na(paretoY) & any(!is.na(paretoX))) {
+  if(any(!is.na(paretoY)) & any(is.na(paretoX)) | any(is.na(paretoY)) & any(!is.na(paretoX))) {
     stop ("Both, paretoy_y and paretoY either need specific indicator names or NA")
   }
 
-  if(!is.na(paretoY) & any(!is.na(paretoX))) {
+  if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
     coefObjective <- defineObjectiveCoefficients(x$scenarioTable[x$scenarioTable$indicator %in% c(paretoY),])
-    #coefObjective <- defineObjectiveCoefficients(x$scenarioTable[x$scenarioTable$indicator %in% c(paretoY, paretoX),])
-    rows_paretoY <- as.numeric(rownames(x$scenarioTable[x$scenarioTable$indicator %in% paretoY,]))
-    rows_paretoX <- as.numeric(rownames(x$scenarioTable[x$scenarioTable$indicator %in% paretoX,]))
-    #piConstraintCoefficients <- x$coefConstraint[c(rows_paretoY, rows_paretoX), ]
-    piConstraintCoefficients <- x$coefConstraint[rows_paretoY, ]
-    paretoConstraint <- x$coefConstraint[rows_paretoX, ]
+    constraint_paretoY <- x$coefConstraint[x$coefConstraint[,1] %in% paretoY,]
+    constraint_paretoX <- x$coefConstraint[x$coefConstraint[,1] %in% paretoX,]
+    piConstraintCoefficients <- apply(constraint_paretoY[,-1], c(1,2), as.numeric)
+    paretoConstraint <- apply(constraint_paretoX[,-1], c(1,2), as.numeric)
   }
 
   precision <- 1 / 10^(digitsPrecision)
@@ -82,7 +76,7 @@ solveScenario <- function (x, digitsPrecision = 4,
         function(x) {lpSolveAPI::add.constraint(lprec = lpaObj, xt = x, type = ">=", rhs = piConstraintRhs[2])}
   )
 
-  if(!is.na(paretoY) & any(!is.na(paretoX))) {
+  if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
     # Add rhs that stays the same - i.e. the minimum distance that has to be achieved for the paretoX variable
     apply(paretoConstraint,
           1,
@@ -104,7 +98,7 @@ solveScenario <- function (x, digitsPrecision = 4,
 
   # Update the right hand side
 
-  if(!is.na(paretoY) & any(!is.na(paretoX))) {
+  if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
     lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
                                               rep(paretoMaxDistance, dim(paretoConstraint)[1])))
   } else {
@@ -130,7 +124,7 @@ solveScenario <- function (x, digitsPrecision = 4,
       piConstraintRhs <- c(piConstraintRhs[1], round((piConstraintRhs[1] + piConstraintRhs[2]) / 2, digitsPrecision), piConstraintRhs[2])
     }
 
-    if(!is.na(paretoY) & any(!is.na(paretoX))) {
+    if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
       lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
                                                 rep(paretoMaxDistance, dim(paretoConstraint)[1])))
     } else {
@@ -148,7 +142,7 @@ solveScenario <- function (x, digitsPrecision = 4,
 
   if(statusOpt == 2) {
 
-    if(!is.na(paretoY) & any(!is.na(paretoX))) {
+    if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
       lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1]),
                                                 rep(paretoMaxDistance, dim(paretoConstraint)[1])))  # Prüfen!!
     } else {
