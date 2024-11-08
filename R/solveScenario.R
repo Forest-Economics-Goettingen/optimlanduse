@@ -20,13 +20,15 @@
 #' @param upperBound Optional upper bounds for the land-use options. Must be 1 or a vector in the dimension of the land-use options.
 #' @return A solved landUse portfolio ready for export or further data processing.
 #' @examples
-#' require(readxl)
-#' dat <- read_xlsx(exampleData("exampleGosling.xlsx"))
-#' init <- initScenario(dat, uValue = 2,
-#'                      optimisticRule = "expectation",
-#'                      fixDistance = 3)
-#' result <- solveScenario(x = init)
-#'
+# require(readxl)
+# require(tidyverse)
+# dat <- read_xlsx(exampleData("exampleGosling.xlsx"))
+# init <- initScenario(dat, uValue = 2,
+#                      optimisticRule = "expectation",
+#                      fixDistance = 3)
+# x <- init
+# result <- solveScenario(x = init)
+# landUseRestriction <- c("Crops" = 0.4, "Silvopasture" = 0.1)
 #' @references Knoke, T., Paul, C., Hildebrandt, P. et al. (2016): Compositional diversity
 #' of rehabilitated tropical lands supports multiple ecosystem services and
 #' buffers uncertainties. \emph{Nat Commun} \strong{7}, 11877. \doi{10.1038/ncomms11877}
@@ -36,6 +38,7 @@
 #' @export
 solveScenario <- function (x, digitsPrecision = 4,
                            lowerBound = 0, upperBound = 1,
+                           landUseRestriction = NA,
                            paretoY = NA, paretoX = NA,
                            paretoMaxDistance = NA) {
 
@@ -57,6 +60,11 @@ solveScenario <- function (x, digitsPrecision = 4,
     paretoConstraint <- apply(constraint_paretoX[,-1], c(1,2), as.numeric)
   }
 
+  if(any(!is.na(landUseRestriction)) & !all(names(landUseRestriction) %in% names(x$landUse))) {
+    print(names(landUseRestriction)[!names(landUseRestriction) %in% names(x$landUse)])
+    stop("The landUseRestriction argument must be a subset of the landUse options.")
+  }
+
   precision <- 1 / 10^(digitsPrecision)
   # constraintCoef <- rbind(rep(1, length(coefObjective)), piConstraintCoefficients)
   constraintDirection <- c("==", rep(">=", dim(piConstraintCoefficients)[1]))
@@ -69,6 +77,18 @@ solveScenario <- function (x, digitsPrecision = 4,
   lpSolveAPI::set.objfn(lprec = lpaObj, obj = coefObjective)
   lpSolveAPI::add.constraint(lprec = lpaObj, xt = rep(1, length(coefObjective)),
                              type = "=", rhs = 1)
+  if(all(!is.na(landUseRestriction))) {
+    # Collapse words into a single string separated by '|'
+    pattern <- paste(names(landUseRestriction), collapse = "|")
+    # Use grep to match the 'pattern' in the column names of 'df'
+    col_nums <- grep(pattern, colnames(x$landUse))
+    for(i in 1:length(col_nums)) {
+      constraint_vec <- rep(0, length(coefObjective))
+      constraint_vec[col_nums[i]] <- 1
+      lpSolveAPI::add.constraint(lprec = lpaObj, xt =constraint_vec,
+                                 type = "=", rhs = landUseRestriction[i])
+    }
+  }
 
   # Add rhs that will be updated - the distance of the optimized Indicator
   apply(piConstraintCoefficients,
@@ -97,13 +117,21 @@ solveScenario <- function (x, digitsPrecision = 4,
   counter <- 1 # 1 as the first iteration is outside the loop
 
   # Update the right hand side
-
-  if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
-    lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
-                                              rep(paretoMaxDistance, dim(paretoConstraint)[1])))
-  } else {
-    lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1])))
-  }
+  if(all(!is.na(landUseRestriction))) {
+    if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
+      lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, landUseRestriction,
+                                                rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
+                                                rep(paretoMaxDistance, dim(paretoConstraint)[1])))
+    } else {
+      lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, landUseRestriction,
+                                                rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1])))
+    }} else {
+      if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
+        lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
+                                                  rep(paretoMaxDistance, dim(paretoConstraint)[1])))
+      } else {
+        lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1])))
+      }}
 
   statusOpt <- lpSolveAPI::solve.lpExtPtr(lpaObj)
   # ein gutes Beispiel zum Lernen: https://rpubs.com/nayefahmad/linear-programming
@@ -124,12 +152,22 @@ solveScenario <- function (x, digitsPrecision = 4,
       piConstraintRhs <- c(piConstraintRhs[1], round((piConstraintRhs[1] + piConstraintRhs[2]) / 2, digitsPrecision), piConstraintRhs[2])
     }
 
-    if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
-      lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
-                                                rep(paretoMaxDistance, dim(paretoConstraint)[1])))
-    } else {
-      lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1])))
-    }
+    if(all(!is.na(landUseRestriction))) {
+      if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
+        lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, landUseRestriction,
+                                                  rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
+                                                  rep(paretoMaxDistance, dim(paretoConstraint)[1])))
+      } else {
+        lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, landUseRestriction,
+                                                  rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1])))
+      }} else {
+        if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
+          lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1]),
+                                                    rep(paretoMaxDistance, dim(paretoConstraint)[1])))
+        } else {
+          lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[2], dim(piConstraintCoefficients)[1])))
+        }}
+
 
     (statusOpt <- lpSolveAPI::solve.lpExtPtr(lpaObj))
 
@@ -142,12 +180,21 @@ solveScenario <- function (x, digitsPrecision = 4,
 
   if(statusOpt == 2) {
 
-    if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
-      lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1]),
-                                                rep(paretoMaxDistance, dim(paretoConstraint)[1])))  # Prüfen!!
-    } else {
-      lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1])))
-    }
+    if(all(!is.na(landUseRestriction))) {
+      if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
+        lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, landUseRestriction,
+                                                  rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1]),
+                                                  rep(paretoMaxDistance, dim(paretoConstraint)[1])))
+      } else {
+        lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, landUseRestriction,
+                                                  rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1])))
+      }} else {
+        if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
+          lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1]),
+                                                    rep(paretoMaxDistance, dim(paretoConstraint)[1])))
+        } else {
+          lpSolveAPI::set.rhs(lprec = lpaObj, b = c(1, rep(piConstraintRhs[1], dim(piConstraintCoefficients)[1])))
+        }}
 
     statusOpt <- lpSolveAPI::solve.lpExtPtr(lpaObj)
     retPiConstraintRhs <- piConstraintRhs[1]
