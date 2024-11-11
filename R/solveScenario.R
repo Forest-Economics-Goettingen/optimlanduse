@@ -42,7 +42,7 @@ solveScenario <- function (x, digitsPrecision = 4,
   if(any(!is.na(paretoY)) & any(is.na(paretoX)) | any(is.na(paretoY)) & any(!is.na(paretoX))) {
     stop ("Both, paretoy_y and paretoY either need specific indicator names or NA")
   }
-  rm(piConstraintCoefficients)
+
   if(any(!is.na(paretoY)) & any(!is.na(paretoX))) {
     coefObjective <- defineObjectiveCoefficients(x$scenarioTable[x$scenarioTable$indicator %in% c(paretoY),])
     constraint_paretoY <- x$coefConstraint[x$coefConstraint[,1] %in% paretoY,]
