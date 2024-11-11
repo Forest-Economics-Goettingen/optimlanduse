@@ -20,20 +20,6 @@
 #' @param upperBound Optional upper bounds for the land-use options. Must be 1 or a vector in the dimension of the land-use options.
 #' @return A solved landUse portfolio ready for export or further data processing.
 #' @examples
-require(readxl)
-require(tidyr)
-require(dplyr)
-dat <- read_xlsx(exampleData("exampleGosling.xlsx"))
-dat <- read.csv("./inst/extdata/paretoIndicators.csv")
-init <- initScenario(dat, uValue = 3,
-                     optimisticRule = "expectation",
-                     fixDistance = 3)
-x <- init
-paretoY <- "annuity"
-paretoX <- c("canopy_arthropods", "fungi_root_rare")
-paretoMaxDistance <- 0.1
-#landUseRestriction <- c("Pasture" = 0, "Plantation" = 0)
-landUseRestriction <- c("Beech+Douglas" = 0, "Beech+Spruce" = 0)
 #' @references Knoke, T., Paul, C., Hildebrandt, P. et al. (2016): Compositional diversity
 #' of rehabilitated tropical lands supports multiple ecosystem services and
 #' buffers uncertainties. \emph{Nat Commun} \strong{7}, 11877. \doi{10.1038/ncomms11877}
