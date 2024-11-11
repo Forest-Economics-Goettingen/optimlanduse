@@ -85,8 +85,8 @@ solveScenario <- function (x, digitsPrecision = 4,
     for(i in 1:length(col_nums)) {
       constraint_vec <- rep(0, length(coefObjective))
       constraint_vec[col_nums[i]] <- 1
-      lpSolveAPI::add.constraint(lprec = lpaObj, xt =constraint_vec,
-                                 type = "=", rhs = landUseRestriction[i])
+      lpSolveAPI::add.constraint(lprec = lpaObj, xt = constraint_vec,
+                                 type = "<=", rhs = landUseRestriction[i])
     }
   }
 
