@@ -20,15 +20,16 @@
 #' @param upperBound Optional upper bounds for the land-use options. Must be 1 or a vector in the dimension of the land-use options.
 #' @return A solved landUse portfolio ready for export or further data processing.
 #' @examples
-# require(readxl)
-# require(tidyverse)
-# dat <- read_xlsx(exampleData("exampleGosling.xlsx"))
-# init <- initScenario(dat, uValue = 2,
-#                      optimisticRule = "expectation",
-#                      fixDistance = 3)
-# x <- init
-# result <- solveScenario(x = init)
-# landUseRestriction <- c("Crops" = 0.4, "Silvopasture" = 0.1)
+#' require(readxl)
+#' require(tidyverse)
+#' dat <- read_xlsx(exampleData("exampleGosling.xlsx"))
+#' dat <- read.csv("./inst/extdata/paretoIndicators.csv")
+#' init <- initScenario(dat, uValue = 2,
+#'                      optimisticRule = "expectation",
+#'                      fixDistance = 3)
+#' x <- init
+#' result <- solveScenario(x = init)
+#' landUseRestriction <- c("Beech+Douglas" = 0, "Beech+Spruce" = 0)
 #' @references Knoke, T., Paul, C., Hildebrandt, P. et al. (2016): Compositional diversity
 #' of rehabilitated tropical lands supports multiple ecosystem services and
 #' buffers uncertainties. \emph{Nat Commun} \strong{7}, 11877. \doi{10.1038/ncomms11877}
@@ -78,10 +79,8 @@ solveScenario <- function (x, digitsPrecision = 4,
   lpSolveAPI::add.constraint(lprec = lpaObj, xt = rep(1, length(coefObjective)),
                              type = "=", rhs = 1)
   if(all(!is.na(landUseRestriction))) {
-    # Collapse words into a single string separated by '|'
-    pattern <- paste(names(landUseRestriction), collapse = "|")
-    # Use grep to match the 'pattern' in the column names of 'df'
-    col_nums <- grep(pattern, colnames(x$landUse))
+    # find the indices where the values of the second string (restriction) are located in the first (landUse Options)
+    col_nums <- match(names(landUseRestriction), names(x$landUse))
     for(i in 1:length(col_nums)) {
       constraint_vec <- rep(0, length(coefObjective))
       constraint_vec[col_nums[i]] <- 1
