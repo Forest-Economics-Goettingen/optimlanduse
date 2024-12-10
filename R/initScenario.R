@@ -48,6 +48,7 @@
 #'                      uValue = 2,
 #'                      optimisticRule = "expectation",
 #'                      fixDistance = 3)
+
 #' @import dplyr
 #' @import tidyr
 #' @importFrom stats setNames
@@ -81,6 +82,7 @@ initScenario <- function(coefTable,  uValue = 1,
   }
 
   checkLanduseTemp <- stats::aggregate(indicator ~ landUse, FUN = testLandUseIndicators, data = coefTable)
+
 
   if (!all(checkLanduseTemp$indicator)) {
     stop ("At least one indicator is not available for at least one land-use option.")
@@ -336,6 +338,7 @@ initScenario <- function(coefTable,  uValue = 1,
     }
 
     scenarioTable <- scenarioTable_restricted
+    landUse <- landUse_restricted
 
   }
 
