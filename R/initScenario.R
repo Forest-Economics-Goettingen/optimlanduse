@@ -38,17 +38,16 @@
 #' @return An initialized optimLanduse S3 object ready for optimization.
 #' @references Husmann, K., von Groß, V., Bödeker, K., Fuchs, J. M., Paul, C., & Knoke, T. (2022). optimLanduse: A package for multiobjective land-cover composition optimization under uncertainty. Methods in Ecology and Evolution, 00, 1– 10. https://doi.org/10.1111/2041-210X.14000
 #' @examples
-require(readxl)
-require(tidyr)
-require(dplyr)
-coefTable <- read_xlsx(exampleData("exampleGosling.xlsx"))
-landUseRestriction <- c("Crops", "Pasture", "Alley Cropping", "Silvopasture")
+#' require(readxl)
+#' require(tidyr)
+#' require(dplyr)
+#' coefTable <- read_xlsx(exampleData("exampleGosling.xlsx"))
+#' landUseRestriction <- c("Crops", "Pasture", "Alley Cropping", "Silvopasture")
 #'
 #' init <- initScenario(dat,
 #'                      uValue = 2,
 #'                      optimisticRule = "expectation",
 #'                      fixDistance = 3)
-
 #' @import dplyr
 #' @import tidyr
 #' @importFrom stats setNames
