@@ -38,8 +38,11 @@
 #' @return An initialized optimLanduse S3 object ready for optimization.
 #' @references Husmann, K., von Groß, V., Bödeker, K., Fuchs, J. M., Paul, C., & Knoke, T. (2022). optimLanduse: A package for multiobjective land-cover composition optimization under uncertainty. Methods in Ecology and Evolution, 00, 1– 10. https://doi.org/10.1111/2041-210X.14000
 #' @examples
-#' require(readxl)
-#' dat <- read_xlsx(exampleData("exampleGosling.xlsx"))
+require(readxl)
+require(tidyr)
+require(dplyr)
+coefTable <- read_xlsx(exampleData("exampleGosling.xlsx"))
+landUseRestriction <- c("Crops", "Pasture", "Alley Cropping", "Silvopasture")
 #'
 #' init <- initScenario(dat,
 #'                      uValue = 2,
@@ -51,7 +54,9 @@
 #' @importFrom stats setNames
 #'
 #' @export
-initScenario <- function(coefTable,  uValue = 1, optimisticRule = "expectation", fixDistance = 3) {
+initScenario <- function(coefTable,  uValue = 1,
+                         optimisticRule = "expectation", fixDistance = 3,
+                         landUseRestriction = NA) {
 
   #-----------------------------------------#
   #### Check the format of the coefTable ####
@@ -67,7 +72,7 @@ initScenario <- function(coefTable,  uValue = 1, optimisticRule = "expectation",
              "indicatorUncertainty", "indicatorGroup")))) {
     warning("Non-necessary columns detected and neglected.")
     coefTable <- coefTable[, names(coefTable) %in% c("indicator", "direction", "landUse", "indicatorValue",
-                            "indicatorUncertainty", "indicatorGroup")]
+                                                     "indicatorUncertainty", "indicatorGroup")]
   }
 
   indicatorNames <- as.character(unique(coefTable$indicator))
@@ -182,16 +187,174 @@ initScenario <- function(coefTable,  uValue = 1, optimisticRule = "expectation",
       apply(scenarioTableFix[, startsWith(names(scenarioTableFix), "adjSem")], 1,
             function(x) {c(min(x), max(x), (max(x) - min(x)))}) %>% t()
 
-    # scenarioTableFix[, c("minAdjSem", "maxAdjSem")] <-
-    #   apply(scenarioTable[, startsWith(names(scenarioTable), "adjSem")], 1,
-    #       function(x) {c(min(x), max(x))}) %>% t()
-    #scenarioTable <- scenarioTableFix
-  } # Das könnte noch eleganter sein! tbd
+  }
+
+  #------------------------------#
+  ## Include restriced data set ##
+  #------------------------------#
+  if(any(!is.na(landUseRestriction)) & !all(landUseRestriction %in% landUse)) {
+    print(landUseRestriction[!landUseRestriction %in% landUse])
+    stop("The landUseRestriction argument must be a subset of the landUse options.")
+  }
+
+  if(all(!is.na(landUseRestriction))) {
+
+    #----------------------------#
+    #### Initialise the table ####
+    #----------------------------#
+
+    landUse_restricted <- landUseRestriction
+    coefTable_restricted <- coefTable %>%
+      filter(landUse %in% landUse_restricted)
 
 
+    expandList_restricted <- list()
+    expandList_restricted[landUse_restricted] <- list(c("High", "Low"))
+
+    expandMatrix1_restricted <- as.matrix(expand.grid(expandList_restricted, stringsAsFactors = FALSE))
+    expandMatrix2_restricted <- do.call(rbind, replicate(length(indicatorNames), expandMatrix1_restricted, simplify = FALSE))
+    scenarioTable_restricted <- tibble(indicator = rep(indicatorNames, each = dim(expandMatrix1_restricted)[1])) %>%
+      bind_cols(as_tibble(expandMatrix2_restricted))
+
+    names(scenarioTable_restricted)[names(scenarioTable_restricted) %in% landUse_restricted] <-
+      paste0("outcome",names(scenarioTable_restricted)[names(scenarioTable_restricted) %in% landUse_restricted])
+
+    #--------------------#
+    ## Attach direction ##
+    #--------------------#
+
+    scenarioTableTemp1_restricted<- scenarioTable_restricted
+    scenarioTable_restricted <- merge(scenarioTable_restricted, unique(coefTable_restricted[, c("indicator", "direction")]), by = "indicator")
+    if(!dim(scenarioTableTemp1_restricted)[1] == dim(scenarioTable_restricted)[1]) {cat("Error: Direction mising or wrong.")}
+
+    #---------------------------------------------#
+    ## Attach indicator values and uncertainties ##
+    #---------------------------------------------#
+
+    scenarioTableTemp2_restricted <- scenarioTable_restricted
+
+    spread1_restricted <- tidyr::spread(data = coefTable_restricted[, !names(coefTable_restricted) == "indicatorUncertainty"],
+                             key = landUse,
+                             value = "indicatorValue")
+    names(spread1_restricted)[names(spread1_restricted) %in% eval(landUse_restricted)] <-
+      paste0("mean", names(spread1_restricted)[names(spread1_restricted) %in% eval(landUse_restricted)])
 
 
+    spread2_restricted <- tidyr::spread(data = coefTable_restricted[, !names(coefTable_restricted) == "indicatorValue"],
+                             key = landUse,
+                             value = "indicatorUncertainty")
+    names(spread2_restricted)[names(spread2_restricted) %in% eval(landUse_restricted)] <-
+      paste0("sem", names(spread2_restricted)[names(spread2_restricted) %in% eval(landUse_restricted)])
 
+
+    for(j in landUse_restricted) {
+      byIndicator <- c("indicator")
+      names(byIndicator) <- "indicator"
+      scenarioTable_restricted <- left_join(scenarioTable_restricted, spread1_restricted[, c("indicator", paste0("mean", j))], by = byIndicator)
+      scenarioTable_restricted <- left_join(scenarioTable_restricted, spread2_restricted[, c("indicator", paste0("sem", j))], by = byIndicator)
+    }
+
+    scenarioTable_restricted <- scenarioTable_restricted %>% select(-contains("sem"), everything()) # Alternatively, but slower, a second loop would be suitable
+
+    if(!dim(scenarioTableTemp1_restricted)[1] == dim(scenarioTable_restricted)[1]) {cat("Error: Attaching expectation or uncertainty failed.")}
+
+    #--------------------------------------------#
+    ## Calculate indicator uncertainty adjusted ##
+    #--------------------------------------------#
+
+    scenarioTableTemp3_restricted <- scenarioTable_restricted
+
+    # add Adjusted SEM to the scenarioTable
+
+    scenarioTable_restricted <- addAdjSEM(scenarioTable = scenarioTable_restricted,
+                                         landUse = landUse_restricted, uValue = uValue,
+                                         optimisticRule = optimisticRule)
+
+
+    if (!(fixDistance >=0 & fixDistance <= 10)  & !is.na(fixDistance)) {
+      fixDistance <- NA
+      warning("The fixDistance did not meet the requirements and therefore set to NA. Please find the possible values for the fixDistance in the help.")
+    }
+
+    if ((fixDistance >=0 & fixDistance <= 10)  & !is.na(fixDistance)) {
+      scenarioTableFix_restriced <- addAdjSEM(scenarioTable = scenarioTableTemp3_restricted,
+                                    landUse = landUse_restricted,
+                                    uValue = fixDistance,
+                                    optimisticRule = optimisticRule)
+    }
+
+
+    if(!optimisticRule %in% c("uncertaintyAdjustedExpectation", "expectation")) {cat("optimisticRule must be uncertaintyAdjustedExpectation or expectation")}
+    if(!dim(scenarioTableTemp3_restricted)[1] == dim(scenarioTable_restricted)[1] | any(is.na(scenarioTable_restricted))) {cat("Error: Calculation of adjusted uncertainty.")}
+
+    #--------------------------#
+    ## calculate Min Max Diff ##
+    #--------------------------#
+
+
+    if (is.na(fixDistance)) {
+      scenarioTable_restricted[, c("minAdjSem", "maxAdjSem", "diffAdjSem")] <-
+        apply(scenarioTable_restricted[, startsWith(names(scenarioTable_restricted), "adjSem")], 1,
+              function(x) {c(min(x), max(x), (max(x) - min(x)))}) %>% t()
+    } else {
+      scenarioTable_restricted[, c("minAdjSem", "maxAdjSem", "diffAdjSem")] <-
+        apply(scenarioTableFix_restriced[, startsWith(names(scenarioTableFix_restriced), "adjSem")], 1,
+              function(x) {c(min(x), max(x), (max(x) - min(x)))}) %>% t()
+
+    }
+
+
+    for(k in unique(scenarioTable_restricted$indicator)){
+
+      scenarioTable_restricted_temp <- scenarioTable_restricted %>%
+        filter(indicator == k)
+
+      for(l in seq_len(nrow(scenarioTable_restricted_temp))){
+
+        scenario_temp_restricted <- scenarioTable_restricted_temp[l, startsWith(names(scenarioTable_restricted_temp), "outcome")]
+
+        col_names_restricted <- names(scenario_temp_restricted)
+        values_restricted <- as.character(unlist(scenario_temp_restricted))
+
+        filtered_df <- scenarioTable[scenarioTable$indicator == k,]
+        for (m in col_names_restricted) {
+          filtered_df <- filtered_df %>% filter(!!sym(m) == values_restricted[match(m, col_names_restricted)])
+        }
+
+        values_restricted_mean <- mean(as.numeric(filtered_df[1, startsWith(names(filtered_df), "mean")]))
+        filtered_df$test_beta <- ifelse(filtered_df$direction == "more is better",
+                                        (filtered_df$maxAdjSem - values_restricted_mean)/filtered_df$diffAdjSem,
+                                        (values_restricted_mean - filtered_df$minAdjSem)/filtered_df$diffAdjSem)
+
+        filtered_df <- filtered_df %>%
+          filter(test_beta == max(test_beta)) %>%
+          filter(!duplicated(test_beta))
+
+        scenarioTable_restricted[scenarioTable_restricted$indicator == k, ][l,"maxAdjSem"] <- filtered_df$maxAdjSem
+        scenarioTable_restricted[scenarioTable_restricted$indicator == k, ][l,"minAdjSem"] <- filtered_df$minAdjSem
+        scenarioTable_restricted[scenarioTable_restricted$indicator == k, ][l,"diffAdjSem"] <- filtered_df$diffAdjSem
+
+      }
+    }
+
+    scenarioTable <- scenarioTable_restricted
+
+  }
+
+  # Check if all min / max / diff adj values are the same in restricted and unrestricted scenario
+  # scenarioTable_check <- scenarioTable[scenarioTable$diffAdjSem %in% scenarioTable_restricted_check2,]
+  #
+  # scenarioTable_check2 <- scenarioTable_check %>%
+  #   select(indicator, col_names_restricted, minAdjSem, maxAdjSem, diffAdjSem) %>%
+  #   filter(!duplicated(.))
+  #
+  # scenarioTable_restricted_check <- scenarioTable_restricted %>%
+  #   select(indicator, col_names_restricted, minAdjSem, maxAdjSem, diffAdjSem)
+  #
+  # scenarioTable_check2 <- scenarioTable_check2 %>% arrange(!!!syms(col_names_restricted))
+  # scenarioTable_restricted_check <- scenarioTable_restricted_check %>% arrange(!!!syms(col_names_restricted))
+  #
+  # all(scenarioTable_restricted_check==scenarioTable_check2)
 
   #-------------------------------------------------------------#
   ## Define the coefficients for the linear objective function ##
